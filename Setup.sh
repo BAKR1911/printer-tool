@@ -1,101 +1,85 @@
 #!/bin/bash
 # ===============================================================
-#  Script: setup.sh (The Installer)
-#  Purpose: Create Admin, Install Tool, Create Silent Desktop Icon
+# Setup.sh - Installer for printer-tool
+# - installs to /opt/printer-tool
+# - creates symlink /usr/local/bin/printer-tool
+# - creates desktop shortcut for the real interactive user
+# - creates sudoers entry so the desktop icon can run the tool WITHOUT password
 # ===============================================================
+set -euo pipefail
 
-# التأكد من التشغيل كجذر
 if [[ $EUID -ne 0 ]]; then
-   echo "Please run with sudo"
-   exit 1
+  echo "Run as root: sudo ./Setup.sh"
+  exit 1
 fi
 
-FIXED_ADMIN="admin"
+REPO_RAW="https://raw.githubusercontent.com/BAKR1911/printer-tool/main"
+INSTALL_DIR="/opt/printer-tool"
+BIN="/usr/local/bin/printer-tool"
+DESKTOP_NAME="printer-tool.desktop"
 
-echo "--- [1] Checking Admin User Status ---"
+# determine real interactive user (the one who invoked sudo)
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+USER_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6 || echo "/home/$REAL_USER")"
+DESKTOP_DIR="$(sudo -u "$REAL_USER" xdg-user-dir DESKTOP 2>/dev/null || echo "$USER_HOME/Desktop")"
+mkdir -p "$DESKTOP_DIR" 2>/dev/null || true
 
-# التأكد من يوزر الإدارة (admin)
-if id "$FIXED_ADMIN" &>/dev/null; then
-    echo "User '$FIXED_ADMIN' already exists. Skipping creation."
+echo "[1/6] Creating install dir $INSTALL_DIR ..."
+mkdir -p "$INSTALL_DIR"
+
+echo "[2/6] Downloading printers.sh and printers.list (or use local files if present)..."
+# prefer local files if present in current folder
+if [ -f "./printers.sh" ]; then
+  cp -f ./printers.sh "$INSTALL_DIR/printers.sh"
 else
-    echo "------------------------------------------------"
-    read -s -p "Enter NEW local password for $FIXED_ADMIN: " ADMIN_PASS
-    echo ""
-    
-    echo "Creating local admin user: $FIXED_ADMIN..."
-    useradd -m -s /bin/bash "$FIXED_ADMIN"
-    
-    # تحديث الـ Shadow وتعيين الباسورد
-    pwconv
-    echo "$FIXED_ADMIN:$ADMIN_PASS" | chpasswd --force-shadow 2>/dev/null
-    
-    if [ $? -eq 0 ]; then
-        echo "Password for '$FIXED_ADMIN' set successfully."
-    else
-        echo "Standard bypass failed, using direct shadow update..."
-        echo "$FIXED_ADMIN:$ADMIN_PASS" | chpasswd -c SHA512
-    fi
+  curl -fsSL "$REPO_RAW/printers.sh" -o "$INSTALL_DIR/printers.sh"
 fi
 
-# إضافة اليوزر لمجموعة الـ sudo
-usermod -aG sudo "$FIXED_ADMIN" 2>/dev/null || usermod -aG wheel "$FIXED_ADMIN"
-echo "Permissions verified for $FIXED_ADMIN."
-
-echo "------------------------------------------------"
-
-# [2] تحديد يوزر الموظف الحالي ومسار سطح المكتب
-REAL_LOGIN_USER=$(logname 2>/dev/null || echo $SUDO_USER)
-USER_HOME=$(getent passwd "$REAL_LOGIN_USER" | cut -d: -f6)
-
-# البحث عن مجلد سطح المكتب (يدعم العربي والإنجليزي)
-if [ -d "$USER_HOME/Desktop" ]; then
-    DESKTOP_PATH="$USER_HOME/Desktop"
-elif [ -d "$USER_HOME/سطح المكتب" ]; then
-    DESKTOP_PATH="$USER_HOME/سطح المكتب"
+if [ -f "./printers.list" ]; then
+  cp -f ./printers.list "$INSTALL_DIR/printers.list"
 else
-    DESKTOP_PATH="$USER_HOME/Desktop"
-    mkdir -p "$DESKTOP_PATH"
+  # try fetch remote printers.list (optional)
+  if curl -fsS --connect-timeout 5 "$REPO_RAW/printers.list" -o "$INSTALL_DIR/printers.list" 2>/dev/null; then
+    echo "  - remote printers.list fetched"
+  else
+    # leave empty file for admin to fill
+    : > "$INSTALL_DIR/printers.list"
+    echo "  - no printers.list available, created empty $INSTALL_DIR/printers.list"
+  fi
 fi
 
-echo "Installing IT Aman Tool for user: $REAL_LOGIN_USER"
+chmod +x "$INSTALL_DIR/printers.sh"
 
-# [3] تثبيت السكربت الأساسي (printers.sh) في مسار النظام الثابت
-if [ -f "printers.sh" ]; then
-    cp printers.sh /usr/local/bin/it-aman
-    chmod +x /usr/local/bin/it-aman
-    chown root:root /usr/local/bin/it-aman
-    echo "Main script installed to /usr/local/bin/it-aman"
-else
-    echo "Error: printers.sh not found in current folder!"
-    exit 1
-fi
+echo "[3/6] Creating symlink $BIN -> $INSTALL_DIR/printers.sh"
+ln -sf "$INSTALL_DIR/printers.sh" "$BIN"
+chmod +x "$BIN"
 
-# [4] إضافة استثناء في الـ Sudoers (عشان يفتح بدون باسورد للموظف)
-echo "$REAL_LOGIN_USER ALL=(ALL) NOPASSWD: /usr/local/bin/it-aman" > /etc/sudoers.d/it-aman-tool
-chmod 0440 /etc/sudoers.d/it-aman-tool
+echo "[4/6] Creating sudoers entry to allow $REAL_USER run $BIN without password"
+SUDOERS_FILE="/etc/sudoers.d/printer-tool-$REAL_USER"
+cat > "$SUDOERS_FILE" <<EOF
+# Allow the interactive user to run printer-tool without password
+$REAL_USER ALL=(ALL) NOPASSWD: $BIN
+EOF
+chmod 0440 "$SUDOERS_FILE"
 
-# [5] إنشاء الأيقونة الاحترافية (بدون تيرمنال)
-cat <<EOF > "$DESKTOP_PATH/IT-Aman.desktop"
+echo "[5/6] Creating desktop shortcut for $REAL_USER (no password at launch)"
+DESKTOP_PATH="$DESKTOP_DIR/$DESKTOP_NAME"
+cat > /tmp/$DESKTOP_NAME.$$ <<EOF
 [Desktop Entry]
-Version=12.6
-Type=Application
-Name=Printers
-Comment=Printer Repair Tool
-Exec=sudo /usr/local/bin/it-aman
+Name=Printer Tool
+Comment=IT Aman - Printer Tool
+Exec=sudo $BIN
 Icon=printer
 Terminal=false
-StartupNotify=true
-Categories=System;Utility;
-X-GNOME-Autostart-enabled=true
+Type=Application
+Categories=Utility;
 EOF
 
-# ضبط ملكية الأيقونة للموظف
-chown "$REAL_LOGIN_USER":"$REAL_LOGIN_USER" "$DESKTOP_PATH/IT-Aman.desktop"
-chmod +x "$DESKTOP_PATH/IT-Aman.desktop"
+mv -f /tmp/$DESKTOP_NAME.$$ "$DESKTOP_PATH"
+chown "$REAL_USER:$REAL_USER" "$DESKTOP_PATH" 2>/dev/null || true
+chmod +x "$DESKTOP_PATH"
+# try mark trusted (GNOME)
+sudo -u "$REAL_USER" gio set "$DESKTOP_PATH" "metadata::trusted" true 2>/dev/null || true
 
-# إجبار السيستم على الوثوق في الأيقونة (لأجهزة Ubuntu الحديثة)
-sudo -u "$REAL_LOGIN_USER" gio set "$DESKTOP_PATH/IT-Aman.desktop" metadata::trusted true 2>/dev/null || true
-
-echo "------------------------------------------------"
-echo "Installation Complete Successfully!"
-echo "The tool is now on $REAL_LOGIN_USER's Desktop."
+echo "[6/6] Done. Installed at: $INSTALL_DIR"
+echo "You can run the tool from Applications menu or by double-clicking the desktop icon."

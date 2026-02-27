@@ -119,11 +119,12 @@ fi
 sudo cp printers.sh /usr/local/bin/it-aman
 sudo chmod +x /usr/local/bin/it-aman
 
-# 2. إنشاء أيقونة سطح المكتب أتوماتيكياً (بدل النسخ)
-DESKTOP_PATH=$(xdg-user-dir DESKTOP)
-[ -z "$DESKTOP_PATH" ] && DESKTOP_PATH="$HOME/Desktop"
+# 1. التأكد من وجود المجلدات الضرورية
+mkdir -p ~/Desktop
+mkdir -p ~/.local/share/applications
 
-cat <<EOF > "$DESKTOP_PATH/it-aman.desktop"
+# 2. إنشاء ملف الأيقونة الأساسي في مجلد التطبيقات (عشان يظهر في قائمة Start)
+cat <<EOF > ~/.local/share/applications/it-aman.desktop
 [Desktop Entry]
 Version=4.0
 Type=Application
@@ -135,10 +136,13 @@ Terminal=false
 Categories=System;Utility;
 EOF
 
-# 3. إعطاء صلاحية التشغيل للأيقونة
-chmod +x "$DESKTOP_PATH/it-aman.desktop"
+# 3. نسخ الأيقونة لسطح المكتب (سواء كان اسمه English أو بالعربي)
+DESKTOP_PATH=$(xdg-user-dir DESKTOP)
+cp ~/.local/share/applications/it-aman.desktop "$DESKTOP_PATH/" 2>/dev/null
+cp ~/.local/share/applications/it-aman.desktop ~/Desktop/ 2>/dev/null
+cp ~/.local/share/applications/it-aman.desktop ~/سطح\ المكتب/ 2>/dev/null
 
-# 4. نسخ ملف القائمة الاحتياطي (اختياري)
-sudo cp printers.list /usr/local/bin/printers.list 2>/dev/null
-
-echo "Done! The tool is now on your Desktop."
+# 4. إعطاء الصلاحيات اللازمة
+chmod +x ~/.local/share/applications/it-aman.desktop
+chmod +x "$DESKTOP_PATH/it-aman.desktop" 2>/dev/null
+chmod +x ~/Desktop/it-aman.desktop 2>/dev/null

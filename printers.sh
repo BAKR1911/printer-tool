@@ -1,16 +1,16 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 11.6-focused (Integrated Sudo & Desktop Fix)
+# Version: 11.8-RESTORED (Detailed Messages + No Terminal)
 # ===============================================================
 
-# 1. طلب صلاحيات الـ Sudo تلقائياً واجهة رسومية
+# [1] طلب صلاحيات الـ Sudo رسومياً (عشان الـ chmod والـ lpadmin)
 if [ "$EUID" -ne 0 ]; then
   pkexec "$0" "$@"
   exit $?
 fi
 
-CURRENT_VERSION="11.6-focused"
+CURRENT_VERSION="11.8-RESTORED"
 TOOL_NAME="IT Aman - Printer Tool"
 SYS_ICON="printer-error"
 
@@ -21,22 +21,17 @@ TMP_DB="/tmp/.printer_db"
 DB_FILE=""
 
 LOG_FILE="/var/log/it-aman.log"
-# تحديد المستخدم الحقيقي لتجنب مشاكل الـ Root في المسارات
 REAL_USER=${SUDO_USER:-$(whoami)}
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
-# ==============================
-# Auto Create Desktop Shortcut & Persistent Path
-# ==============================
+# [2] تثبيت المسار الثابت للأيقونة
 FINAL_BIN="/usr/local/bin/it-aman"
-
-# تثبيت السكربت في مسار ثابت بالسيستم لضمان عمل الأيقونة دائماً
 if [ "$0" != "$FINAL_BIN" ]; then
     cp "$0" "$FINAL_BIN"
     chmod +x "$FINAL_BIN"
 fi
 
-# تحديد مجلد سطح المكتب للمستخدم الفعلي
+# [3] إنشاء الأيقونة (Terminal=false لمنع فتح الشاشة السوداء)
 DESKTOP_DIR=$(sudo -u "$REAL_USER" xdg-user-dir DESKTOP || echo "$REAL_HOME/Desktop")
 DESKTOP_FILE="$DESKTOP_DIR/Printer-Tool.desktop"
 
@@ -45,19 +40,15 @@ cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Name=Printer Tool
 Comment=IT Printer Management Tool
-Exec=sudo $FINAL_BIN
+Exec=$FINAL_BIN
 Icon=printer
-Terminal=true
+Terminal=false
 Type=Application
 Categories=Utility;
 EOF
-
 chmod +x "$DESKTOP_FILE"
 chown "$REAL_USER":"$REAL_USER" "$DESKTOP_FILE"
-# جعل الأيقونة موثوقة لأنظمة Ubuntu
 sudo -u "$REAL_USER" gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
-
-echo "Desktop shortcut created for $REAL_USER."
 fi
 
 # -------------------------
@@ -69,11 +60,10 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 touch "$LOG_FILE" 2>/dev/null || true
 chmod 0644 "$LOG_FILE" 2>/dev/null || true
 
-# Driver search dirs
 DRIVER_DIRS=( "/usr/local/share/it_aman/drivers" "/opt/it_aman/drivers" "/usr/share/cups/model" "/usr/share/ppd" "/usr/share/cups/drv" )
 
 # -------------------------
-# Fetch DB (try central then local)
+# Fetch DB
 # -------------------------
 fetch_db() {
   rm -f "$TMP_DB" 2>/dev/null || true
@@ -89,8 +79,6 @@ fetch_db() {
 # Sample printers.list
 Aswan|POS Thermal 1|192.168.10.50|network|tm-raw
 Aswan|Front Office HP M404|192.168.10.20|network|hp-ppd
-Qena|Back Office Epson LQ|192.168.20.15|network|epson-lq
-Luxor|Admin HP P2035|printer-luxor.local|network|hp-p2035
 EOF
   DB_FILE="/tmp/.printer_db_sample"
 }
@@ -116,11 +104,20 @@ normalize_legacy() {
   DB_FILE="/tmp/.printer_db_norm"
 }
 
+# -------------------------
+# استعادة رسائل الـ Validation الأصلية
+# -------------------------
 validate_network() {
   local target="$1"
-  if ! ping -c1 -W2 "$target" &>/dev/null; then return 1; fi
+  if ! ping -c1 -W2 "$target" &>/dev/null; then
+    return 1
+  fi
   if command -v nc &>/dev/null; then
-    if nc -z -w2 "$target" 9100 &>/dev/null; then return 0; else return 2; fi
+    if nc -z -w2 "$target" 9100 &>/dev/null; then
+      return 0
+    else
+      return 2
+    fi
   fi
   return 0
 }
@@ -141,6 +138,9 @@ find_driver() {
   echo "" ; return 1
 }
 
+# -------------------------
+# استعادة رسائل الـ Deploy الأصلية وصفحة الاختبار
+# -------------------------
 deploy_network_printer() {
   local branch="$1"
   local label="$2"
@@ -150,15 +150,20 @@ deploy_network_printer() {
   cups_name=$(echo "$cups_name" | tr -s '_')
 
   if lpstat -p "$cups_name" >/dev/null 2>&1; then
-    zenity --info --text "الطابعة معرفة بالفعل." 2>/dev/null
+    zenity --info --title "Info" --text "الطابعة معرفة بالفعل: $label\nAlready exists." 2>/dev/null
     return 0
   fi
 
+  # تشغيل الفحص والرسائل اللي كنت محتاجها
   validate_network "$addr"
   local vres=$?
   if [ $vres -eq 1 ]; then
-    zenity --error --text "تعذر الوصول للطابعة (Ping failed)." 2>/dev/null
+    zenity --error --title "Network Error" --text "تعذر الوصول للطابعة (Ping failed): $addr\nPlease check network/cable." 2>/dev/null
+    _log "ping-fail $addr"
     return 1
+  elif [ $vres -eq 2 ]; then
+    zenity --warning --title "Port Warning" --text "الطابعة ترد لكن منفذ 9100 مغلق: $addr\nWill attempt add with warning." 2>/dev/null
+    _log "port-closed $addr"
   fi
 
   local uri="socket://${addr}"
@@ -171,11 +176,14 @@ deploy_network_printer() {
   lpdefault -d "$cups_name" 2>/dev/null
 
   if lpstat -p "$cups_name" >/dev/null 2>&1; then
-    zenity --info --text "تم تعريف الطابعة بنجاح: $label" 2>/dev/null
-    if [ -n "$REAL_USER" ]; then
-        sudo -u "$REAL_USER" xdg-open "http://localhost:631/printers/${cups_name}" &>/dev/null || true
-    fi
+    zenity --info --title "Done" --text "تم تعريف الطابعة بنجاح: $label\nPrinter added." 2>/dev/null
+    _log "deployed $cups_name"
+    # صفحة الاختبار الأصلية
+    echo -e "IT Aman Test Page\nPrinter: $label\nDate: $(date)" | lp -d "$cups_name" 2>/dev/null || true
     return 0
+  else
+    zenity --error --title "Failed" --text "فشل تعريف الطابعة: $label" 2>/dev/null
+    return 1
   fi
 }
 
@@ -186,8 +194,9 @@ branch_list_ui() {
   echo "$branches" >> "$tmp"
   SELECTED=$(cat "$tmp" | zenity --list --title "Branches" --column "Branch" --height=420 --width=420 2>/dev/null)
   rm -f "$tmp"
+  [ -z "$SELECTED" ] && echo "" && return
   if [ "$SELECTED" == "Search / فلترة الفروع" ]; then
-    SEARCH=$(zenity --entry --title "Search" --text "اكتب حروف الفرع:" 2>/dev/null)
+    SEARCH=$(zenity --entry --title "Search" --text "اكتب حروف الفرع لتصفية:" --width=520 2>/dev/null)
     [ -z "$SEARCH" ] && echo "" && return
     LIST=$(awk -F'|' -v s="$SEARCH" 'tolower($1) ~ tolower(s) {print $1}' "$DB_FILE" | sort -u)
     PICK=$(echo -n "$LIST" | zenity --list --column "Branch" --height=420 2>/dev/null)
@@ -216,7 +225,7 @@ search_branch_and_deploy() {
 }
 
 # -------------------------
-# Main Execution
+# Main loop
 # -------------------------
 fetch_db
 normalize_db
@@ -239,6 +248,6 @@ while true; do
     2) ( systemctl restart cups; cancel -a; ) | zenity --progress --auto-close 2>/dev/null ;;
     3) search_branch_and_deploy ;;
     4) systemctl stop cups; rm -rf /var/spool/cups/*; systemctl start cups; zenity --info --text "تم المسح." ;;
-    5) zenity --info --text "<b>الحالة:</b>\n$(lpstat -p)" --width=600 2>/dev/null ;;
+    5) STATUS=$(lpstat -p); JOBS=$(lpstat -o); zenity --info --title "Status" --text "<b>الحالة العامة:</b>\n$STATUS\n\n<b>الأوامر:</b>\n$JOBS" --width=700 2>/dev/null ;;
   esac
 done

@@ -4,7 +4,7 @@
 # ===============================================================
 
 OFFICIAL_NAME="Help Desk Operations Support"
-CURRENT_VERSION="2.0"
+CURRENT_VERSION="3.0"
 SYS_ICON="printer"
 
 # --- [ الروابط المباشرة لـ GitHub ] ---

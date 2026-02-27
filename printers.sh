@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 13-FULL-POWER
+# Version: 13.0-FULL-POWER
 # Purpose: Branch-first UI; Network-only deploy; Sudo-less for Users
 # ===============================================================
 
@@ -16,7 +16,7 @@ setup_nopasswd() {
 }
 setup_nopasswd
 
-CURRENT_VERSION="13-FULL"
+CURRENT_VERSION="13.0-FULL"
 TOOL_NAME="Printers "
 SYS_ICON="printer-error"
 

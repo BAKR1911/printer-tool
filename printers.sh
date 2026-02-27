@@ -112,3 +112,7 @@ else
         esac
     done
 fi
+# كود يوضع داخل Setup.sh لعمل الأيقونة
+DESKTOP_PATH=$(xdg-user-dir DESKTOP)
+cp it-aman.desktop "$DESKTOP_PATH/" 2>/dev/null || cp it-aman.desktop ~/Desktop/
+chmod +x "$DESKTOP_PATH/it-aman.desktop" 2>/dev/null || chmod +x ~/Desktop/it-aman.desktop

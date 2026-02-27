@@ -1,10 +1,10 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 11.4-focused
+# Version: 11.6-focused
 # Purpose: Branch-first UI with Search-filter; Network-only printer deploy + test
 # ===============================================================
-CURRENT_VERSION="11.4-focused"
+CURRENT_VERSION="11.6-focused"
 TOOL_NAME="IT Aman - Printer Tool"
 SYS_ICON="printer-error"
 
@@ -19,7 +19,32 @@ REAL_USER=${SUDO_USER:-$(whoami)}
 
 # Driver search dirs (يمكن تعديلها لتشير لمكان الدرايفرز عندك)
 DRIVER_DIRS=( "/usr/local/share/it_aman/drivers" "/opt/it_aman/drivers" "/usr/share/cups/model" "/usr/share/ppd" "/usr/share/cups/drv" )
+# ==============================
+# Auto Create Desktop Shortcut
+# ==============================
 
+SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+
+DESKTOP_DIR="$HOME/Desktop"
+DESKTOP_FILE="$DESKTOP_DIR/Printer-Tool.desktop"
+
+if [ ! -f "$DESKTOP_FILE" ]; then
+cat > "$DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Name=Printer Tool
+Comment=IT Printer Management Tool
+Exec=$SCRIPT_PATH
+Icon=$SCRIPT_DIR/printer.png
+Terminal=true
+Type=Application
+Categories=Utility;
+EOF
+
+chmod +x "$DESKTOP_FILE"
+
+echo "Desktop shortcut created."
+fi
 # -------------------------
 # Basic checks & logging
 # -------------------------

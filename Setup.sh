@@ -12,7 +12,7 @@ ICON_FILE="$SCRIPT_DIR/printer.png"
 # ===============================================================
 
 OFFICIAL_NAME="Help Desk Operations Support"
-CURRENT_VERSION="11.5"
+CURRENT_VERSION="11.8"
 SYS_ICON="printer"
 
 # --- [ الروابط المباشرة لـ GitHub ] ---

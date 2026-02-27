@@ -1,10 +1,10 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 11.3-focused
+# Version: 11.4-focused
 # Purpose: Branch-first UI with Search-filter; Network-only printer deploy + test
 # ===============================================================
-CURRENT_VERSION="11.3-focused"
+CURRENT_VERSION="11.4-focused"
 TOOL_NAME="IT Aman - Printer Tool"
 SYS_ICON="printer-error"
 

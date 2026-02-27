@@ -1,6 +1,6 @@
 #!/bin/bash
 # ===============================================================
-# it_aman_printer_fix.sh (v12.8 - THE ORIGINAL FULL CODE)
+# it_aman_printer_fix.sh (v13.3 - THE ORIGINAL FULL CODE)
 # ===============================================================
 
 CURRENT_VERSION="13.3-FULL"

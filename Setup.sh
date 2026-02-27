@@ -1,10 +1,18 @@
 #!/bin/bash
+# Get the real path of this script مهما كان مكانه
+SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+
+# خلي كل ملفاتك تعتمد على مكان السكربت نفسه
+PRINTERS_LIST="$SCRIPT_DIR/printers.list"
+VERSION_FILE="$SCRIPT_DIR/version.txt"
+ICON_FILE="$SCRIPT_DIR/printer.png"
 # ===============================================================
 #  Script: printers.sh (Final Production Edition - BAKR1911)
 # ===============================================================
 
 OFFICIAL_NAME="Help Desk Operations Support"
-CURRENT_VERSION="11.4"
+CURRENT_VERSION="11.5"
 SYS_ICON="printer"
 
 # --- [ الروابط المباشرة لـ GitHub ] ---

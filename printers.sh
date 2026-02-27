@@ -16,7 +16,7 @@ setup_nopasswd() {
 }
 setup_nopasswd
 
-CURRENT_VERSION="12.6-FULL"
+CURRENT_VERSION="13-FULL"
 TOOL_NAME="Printers "
 SYS_ICON="printer-error"
 

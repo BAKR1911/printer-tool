@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===============================================================
 # printers.sh - IT Aman / Printer Tool (Stable, full-featured)
-# Version: 11.5
+# Version: 11.6
 # Purpose: Branch-first UI, network-only deploy, self-update, merge DB,
 #          single desktop shortcut, robust CUPS deploy with validation.
 # Notes: - Place printers.list next to this script or in /opt/printer-tool/

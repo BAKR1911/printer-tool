@@ -1,11 +1,12 @@
 #!/bin/bash
 # ===============================================================
-# IT Aman Ultimate System v7.0
-# Merged: Mahmoud Rabia + Central Management
+# IT Aman Enterprise Core v9.0
+# Clean Architecture - Full Merge
+# Mahmoud Rabia Edition
 # ===============================================================
 
-CURRENT_VERSION="7.0"
-OFFICIAL_NAME="IT Aman - نظام الدعم الفني للطابعات"
+CURRENT_VERSION="9.0"
+OFFICIAL_NAME="IT Aman - Enterprise Printer System"
 
 USER_GH="BAKR1911"
 REPO_GH="printer-tool"
@@ -14,6 +15,23 @@ BRANCH_GH="main"
 URL_VER="https://raw.githubusercontent.com/$USER_GH/$REPO_GH/$BRANCH_GH/version.txt"
 URL_CODE="https://raw.githubusercontent.com/$USER_GH/$REPO_GH/$BRANCH_GH/printers.sh"
 URL_LIST="https://raw.githubusercontent.com/$USER_GH/$REPO_GH/$BRANCH_GH/printers.list"
+
+LOG_FILE="/var/log/it-aman.log"
+
+# =============================
+# Root Check
+# =============================
+if [ "$EUID" -ne 0 ]; then
+    zenity --error --text "يرجى تشغيل الأداة بصلاحية sudo" 2>/dev/null
+    exit 1
+fi
+
+# =============================
+# Logging
+# =============================
+log_event() {
+    echo "$(date) - $1" >> "$LOG_FILE"
+}
 
 # =============================
 # Silent Auto Update
@@ -32,126 +50,136 @@ auto_sync_system() {
 # =============================
 # Fetch Central DB
 # =============================
-fetch_central_db() {
+fetch_db() {
     rm -f /tmp/.printer_db
-    curl -sL --connect-timeout 5 "$URL_LIST" -o /tmp/.printer_db
+    curl -sL "$URL_LIST" -o /tmp/.printer_db
     DB_FILE="/tmp/.printer_db"
 }
 
 # =============================
-# Root Check
+# Network Validation Layer
 # =============================
-if [ "$EUID" -ne 0 ]; then
-    zenity --error --text "يرجى تشغيل الأداة بصلاحية المدير (sudo it-aman)" --width=300 2>/dev/null
-    exit 1
-fi
+validate_printer_connection() {
+    TARGET="$1"
 
+    ping -c 1 -W 2 "$TARGET" >/dev/null 2>&1 || return 1
+    nc -z -w2 "$TARGET" 9100 >/dev/null 2>&1 || return 2
+
+    return 0
+}
+
+# =============================
+# Mahmoud Rabia Core Engine
+# =============================
+smart_fix() {
+    systemctl restart cups
+    cancel -a 2>/dev/null
+    for p in $(lpstat -p | grep "disabled" | awk '{print $2}'); do
+        cupsenable "$p"
+        cupsaccept "$p"
+    done
+    log_event "Smart Fix executed"
+}
+
+clean_spooler() {
+    systemctl stop cups
+    rm -rf /var/spool/cups/*
+    systemctl start cups
+    log_event "Spooler cleaned"
+}
+
+status_report() {
+    lpstat -p
+    lpstat -o
+}
+
+# =============================
+# Deploy Printer By Branch
+# =============================
+deploy_printer() {
+
+    BRANCH_LIST=$(cut -d'|' -f1 "$DB_FILE")
+
+    SELECTED=$(echo "$BRANCH_LIST" | zenity --list \
+        --title "تعريف طابعة" \
+        --text "اختر الفرع:" \
+        --column "اسم الفرع" \
+        --width=400 --height=400 2>/dev/null)
+
+    [ -z "$SELECTED" ] && return
+
+    RECORD=$(grep "^$SELECTED|" "$DB_FILE")
+    IP=$(echo "$RECORD" | cut -d'|' -f2 | xargs)
+
+    PR_NAME="Printer_${SELECTED// /_}"
+
+    if lpstat -p "$PR_NAME" >/dev/null 2>&1; then
+        zenity --info --text "الطابعة معرفة بالفعل." 2>/dev/null
+        return
+    fi
+
+    validate_printer_connection "$IP"
+    RESULT=$?
+
+    if [ $RESULT -eq 1 ]; then
+        zenity --error --text "لا يمكن الوصول للطابعة.
+تأكد من:
+- توصيل كابل الشبكة
+- تشغيل الطابعة" 2>/dev/null
+        log_event "Ping failed for $SELECTED"
+        return
+    fi
+
+    if [ $RESULT -eq 2 ]; then
+        zenity --error --text "الطابعة متصلة لكن منفذ الطباعة مغلق (9100).
+راجع إعدادات الشبكة." 2>/dev/null
+        log_event "Port 9100 closed for $SELECTED"
+        return
+    fi
+
+    systemctl restart cups
+
+    lpadmin -p "$PR_NAME" -E -v "socket://$IP" -m everywhere
+    lpdefault -d "$PR_NAME"
+
+    if lpstat -p "$PR_NAME" >/dev/null 2>&1; then
+        zenity --info --text "تم تعريف طابعة $SELECTED بنجاح." 2>/dev/null
+        log_event "Printer $SELECTED deployed successfully"
+    else
+        zenity --error --text "حدث خطأ أثناء التعريف." 2>/dev/null
+        log_event "Deployment failed for $SELECTED"
+    fi
+}
+
+# =============================
+# Init
+# =============================
 auto_sync_system
-fetch_central_db
+fetch_db
 
 # =============================
-# Main Menu
+# Main UI
 # =============================
 while true; do
 
     auto_sync_system
 
     CHOICE=$(zenity --list --title "$OFFICIAL_NAME" \
-    --text "اختر الخدمة المطلوبة:" \
     --radiolist --column "اختر" --column "ID" --column "الخدمة" \
-    FALSE "1" "➕ تعريف طابعة بالاسم (بدون إظهار IP)" \
-    FALSE "2" "🛠️ الإصلاح الذكي للخدمات" \
-    FALSE "3" "🧹 مسح أوامر الطباعة المعلقة" \
-    FALSE "4" "📊 عرض حالة الطابعات" \
+    FALSE "1" "➕ تعريف طابعة حسب الفرع" \
+    FALSE "2" "🛠️ الإصلاح الذكي" \
+    FALSE "3" "🧹 تنظيف الذاكرة" \
+    FALSE "4" "📊 تقرير الحالة" \
     FALSE "5" "🚪 خروج" \
-    --width=600 --height=450 2>/dev/null)
+    --width=500 --height=400 2>/dev/null)
 
     [ -z "$CHOICE" ] || [ "$CHOICE" == "5" ] && exit 0
 
     case "$CHOICE" in
-
-        1)
-            BRANCH_NAME=$(zenity --entry \
-            --title "تعريف طابعة" \
-            --text "اكتب اسم الفرع كما هو مسجل:" 2>/dev/null)
-
-            [ -z "$BRANCH_NAME" ] && continue
-
-            RECORD=$(grep -i "^$BRANCH_NAME|" "$DB_FILE")
-
-            if [ -z "$RECORD" ]; then
-                zenity --error --text "الفرع غير موجود في قاعدة البيانات." 2>/dev/null
-                continue
-            fi
-
-            HOST=$(echo "$RECORD" | cut -d'|' -f2 | xargs)
-            MODEL=$(echo "$RECORD" | cut -d'|' -f3 | xargs)
-
-            PR_NAME="Printer_${BRANCH_NAME// /_}"
-
-            (
-            echo "20"
-            echo "# جاري التحقق من اتصال الطابعة..."
-
-            if ping -c 1 -W 2 "$HOST" >/dev/null; then
-
-                echo "50"
-                echo "# تم العثور على الطابعة، جاري التعريف..."
-
-                systemctl restart cups
-
-                lpadmin -p "$PR_NAME" -E -v "socket://$HOST" -m everywhere
-                lpdefault -d "$PR_NAME"
-
-                echo "90"
-
-                if lpstat -p "$PR_NAME" >/dev/null 2>&1; then
-                    echo "100"
-                else
-                    exit 1
-                fi
-
-            else
-                echo "# الطابعة غير متصلة بالشبكة."
-                sleep 2
-                exit 1
-            fi
-
-            ) | zenity --progress --title "جاري التنفيذ" --auto-close --width=400 2>/dev/null
-
-            if [ $? -eq 0 ]; then
-                zenity --info --text "تم تعريف طابعة فرع $BRANCH_NAME بنجاح." 2>/dev/null
-            else
-                zenity --error --text "تعذر الوصول للطابعة.
-برجاء التأكد من:
-- توصيل كابل الإنترنت بالطابعة
-- أن الطابعة تعمل
-- أن الشبكة تعمل بشكل صحيح" 2>/dev/null
-            fi
-            ;;
-
-        2)
-            (
-            echo "30"; systemctl restart cups
-            echo "60"; cancel -a 2>/dev/null
-            echo "90"; for p in $(lpstat -p | grep "disabled" | awk '{print $2}'); do cupsenable "$p"; cupsaccept "$p"; done
-            echo "100"
-            ) | zenity --progress --title "إصلاح ذكي" --auto-close 2>/dev/null
-
-            zenity --info --text "تم إصلاح خدمات الطباعة وتفعيل الطابعات المعطلة." 2>/dev/null
-            ;;
-
-        3)
-            systemctl stop cups
-            rm -rf /var/spool/cups/*
-            systemctl start cups
-            zenity --info --text "تم مسح أوامر الطباعة المعلقة بنجاح." 2>/dev/null
-            ;;
-
-        4)
-            zenity --info --title "حالة النظام" \
-            --text "$(lpstat -p 2>/dev/null)\n\n$(lpstat -o 2>/dev/null)" \
-            --width=550 2>/dev/null
-            ;;
+        1) deploy_printer ;;
+        2) smart_fix; zenity --info --text "تم تنفيذ الإصلاح الذكي." 2>/dev/null ;;
+        3) clean_spooler; zenity --info --text "تم تنظيف الذاكرة." 2>/dev/null ;;
+        4) zenity --info --text "$(status_report)" --width=550 2>/dev/null ;;
     esac
+
 done

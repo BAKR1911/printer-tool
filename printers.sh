@@ -125,7 +125,7 @@ DESKTOP_PATH=$(xdg-user-dir DESKTOP)
 
 cat <<EOF > "$DESKTOP_PATH/it-aman.desktop"
 [Desktop Entry]
-Version=1.0
+Version=4.0
 Type=Application
 Name=Printer Tool
 Comment=Help Desk Operations Support

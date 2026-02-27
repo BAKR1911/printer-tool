@@ -3,3 +3,8 @@ Aswan|Manager HP M404|192.168.10.21|network|hp-ppd
 Aswan|POS Thermal 1|/dev/ttyUSB0|serial|tm-raw
 Aswan|POS Thermal 2|USB_POS_01|usb|tm-raw
 Qena|Back Office Epson LQ|192.168.20.15|network|epson-lq
+Esna|Operation1|192.168.1.108|
+Esna|Operation2|192.168.1.108|
+Esna|acc2|192.168.1.108|
+Esna|acc1|192.168.1.108|
+

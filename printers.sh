@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===============================================================
 # printers.sh - IT Aman / Printer Tool (Stable, full-featured)
-# Version: 11.6
+# Version: 11.7
 # Purpose: Branch-first UI, network-only deploy, self-update, merge DB,
 #          single desktop shortcut, robust CUPS deploy with validation.
 # Notes: - Place printers.list next to this script or in /opt/printer-tool/
@@ -13,7 +13,7 @@ IFS=$'\n\t'
 # -----------------------
 # Config
 # -----------------------
-CURRENT_VERSION="11.6"
+CURRENT_VERSION="11.7"
 REPO_RAW="https://raw.githubusercontent.com/BAKR1911/printer-tool/main"
 APP="printer-tool"
 INSTALL_DIR="/opt/$APP"
@@ -24,9 +24,10 @@ PRINTERS_LIST="printers.list"
 VERSION_FILE="version.txt"
 ICON_NAME="printer.png"
 DRIVER_DIRS=( "/usr/local/share/it_aman/drivers" "/opt/it_aman/drivers" "/usr/share/cups/model" "/usr/share/ppd" "/usr/share/cups/drv" )
+TMP_PREFIX="/tmp/${APP}_$$"
 
 # -----------------------
-# Helpers
+# Helpers (logging)
 # -----------------------
 _info(){ printf '%s [INFO] %s\n' "$(date +'%F %T')" "$*" | tee -a "$LOG" 2>/dev/null; }
 _warn(){ printf '%s [WARN] %s\n' "$(date +'%F %T')" "$*" | tee -a "$LOG" 2>/dev/null; }
@@ -37,25 +38,28 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 touch "$LOG" 2>/dev/null || true
 chmod 644 "$LOG" 2>/dev/null || true
 
+# -----------------------
 # Determine real interactive user (the human who triggered sudo/pkexec)
+# -----------------------
 REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
 USER_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6 || echo "$HOME")"
 
-# Detect desktop folder (XDG aware, supports Arabic names)
+# Desktop detection (xdg-user-dir DESKTOP when possible, supports Arabic)
 detect_desktop_dir(){
-  if [ -f "$USER_HOME/.config/user-dirs.dirs" ]; then
-    val=$(grep XDG_DESKTOP_DIR "$USER_HOME/.config/user-dirs.dirs" | cut -d= -f2- | tr -d '"' | sed 's|\$HOME|'"$USER_HOME"'|g' || true)
-    [ -n "$val" ] && [ -d "$val" ] && { echo "$val"; return; }
+  local desktop
+  desktop=$(sudo -u "$REAL_USER" xdg-user-dir DESKTOP 2>/dev/null || true)
+  if [ -n "$desktop" ] && [ -d "$desktop" ]; then
+    echo "$desktop"
+    return
   fi
   if [ -d "$USER_HOME/Desktop" ]; then echo "$USER_HOME/Desktop"; return; fi
   if [ -d "$USER_HOME/سطح المكتب" ]; then echo "$USER_HOME/سطح المكتب"; return; fi
   mkdir -p "$USER_HOME/Desktop" 2>/dev/null || true
   echo "$USER_HOME/Desktop"
 }
-
 DESKTOP_DIR="$(detect_desktop_dir)"
 
-# Path to the running script
+# Path to running script and script dir
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 
@@ -64,43 +68,22 @@ SUDO_CMD=""
 if [ "$EUID" -ne 0 ]; then SUDO_CMD="sudo"; fi
 
 # -----------------------
-# Self-install / canonical location
-# - copy to /opt/printer-tool/printers.sh if not already there
-# - preserve local printers.list by merging (no data loss)
+# Self-install: move to INSTALL_DIR and merge printers.list (no data loss)
 # -----------------------
-merge_printers_list(){
-  local src="$1" dst="$2"
-  # ensure dst exists
-  touch "$dst"
-  awk -v RS='\r\n|\n' 'NF{print $0}' "$src" | while IFS= read -r line; do
-    # skip comments/empty
-    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "$line" ]] && continue
-    # if line not present in dst, append
-    if ! grep -Fxq "$line" "$dst"; then
-      echo "$line" >> "$dst"
-    fi
-  done
-}
-
 self_install(){
-  # if running from a non-installed location - install to /opt and re-exec
-  if [ "$SCRIPT_PATH" != "$INSTALL_DIR/$0" ] && [ "$SCRIPT_PATH" != "$INSTALL_DIR/printers.sh" ]; then
-    _info "Installing $APP to $INSTALL_DIR (canonical location)..."
+  if [ "$SCRIPT_PATH" != "$INSTALL_DIR/printers.sh" ]; then
+    _info "Installing $APP to $INSTALL_DIR ..."
     $SUDO_CMD mkdir -p "$INSTALL_DIR"
     $SUDO_CMD cp -f "$SCRIPT_PATH" "$INSTALL_DIR/printers.sh"
     $SUDO_CMD chmod +x "$INSTALL_DIR/printers.sh"
-    # copy local printers.list if exists next to the source, and merge with existing in /opt
+    # Copy/merge local printers.list if exists
     if [ -f "$SCRIPT_DIR/$PRINTERS_LIST" ]; then
-      # if /opt has printers.list, merge, else copy
       if $SUDO_CMD test -f "$INSTALL_DIR/$PRINTERS_LIST"; then
-        tmpsrc=$(mktemp)
-        cp -f "$SCRIPT_DIR/$PRINTERS_LIST" "$tmpsrc"
-        $SUDO_CMD bash -c "cat > $INSTALL_DIR/.tmp_src.$$" < "$tmpsrc"
-        # perform merge as root
-        $SUDO_CMD bash -c "awk 'NF{print \$0}' $INSTALL_DIR/.tmp_src.$$ | while IFS= read -r line; do if ! grep -Fxq \"\$line\" $INSTALL_DIR/$PRINTERS_LIST; then echo \"\$line\" >> $INSTALL_DIR/$PRINTERS_LIST; fi; done"
-        rm -f "$tmpsrc" 2>/dev/null || true
-        $SUDO_CMD rm -f "$INSTALL_DIR/.tmp_src.$$" 2>/dev/null || true
+        # merge lines not already present
+        tmp_src=$(mktemp "$TMP_PREFIX.src.XXXX")
+        cp -f "$SCRIPT_DIR/$PRINTERS_LIST" "$tmp_src"
+        $SUDO_CMD bash -c "awk 'NF && \$0 !~ /^#/ {print \$0}' '$tmp_src' | while IFS= read -r line; do if ! grep -Fxq \"\$line\" '$INSTALL_DIR/$PRINTERS_LIST'; then echo \"\$line\" >> '$INSTALL_DIR/$PRINTERS_LIST'; fi; done"
+        rm -f "$tmp_src" 2>/dev/null || true
         _info "Merged local printers.list into $INSTALL_DIR/$PRINTERS_LIST"
       else
         $SUDO_CMD cp -f "$SCRIPT_DIR/$PRINTERS_LIST" "$INSTALL_DIR/$PRINTERS_LIST"
@@ -111,7 +94,7 @@ self_install(){
     if [ -f "$SCRIPT_DIR/$ICON_NAME" ]; then
       $SUDO_CMD cp -f "$SCRIPT_DIR/$ICON_NAME" "$INSTALL_DIR/$ICON_NAME"
     fi
-    # create symlink in /usr/local/bin
+    # create symlink
     $SUDO_CMD ln -sf "$INSTALL_DIR/printers.sh" "$BIN_LINK"
     $SUDO_CMD chmod +x "$BIN_LINK"
     _info "Installed. Re-executing installed script..."
@@ -121,45 +104,47 @@ self_install(){
 }
 
 # -----------------------
-# Desktop shortcut: single idempotent .desktop on user's Desktop
-# - Removes legacy names first to avoid duplicates
-# - Exec uses pkexec env so user gets auth prompt and GUI displays correctly
+# Ensure single desktop shortcut (idempotent)
 # -----------------------
 ensure_single_desktop(){
   [ -n "$DESKTOP_DIR" ] || return 0
-  local old_names=( "IT-Aman.desktop" "IT-Aman-Tool.desktop" "Printer-Tool.desktop" "$DESKTOP_NAME" )
-  for n in "${old_names[@]}"; do
+  local desktop_path="$DESKTOP_DIR/$DESKTOP_NAME"
+  # remove legacy variants
+  local legacy=("IT-Aman.desktop" "IT-Aman-Tool.desktop" "Printer-Tool.desktop" "$DESKTOP_NAME")
+  for n in "${legacy[@]}"; do
     $SUDO_CMD rm -f "$DESKTOP_DIR/$n" 2>/dev/null || true
   done
 
-  # Choose icon: use installed icon if exists, else system "printer"
+  # Build Exec: use pkexec to prompt for auth when clicking icon. preserve DISPLAY/XAUTHORITY.
+  local exec_cmd="pkexec env DISPLAY=\$DISPLAY XAUTHORITY=\$XAUTHORITY \"$INSTALL_DIR/printers.sh\""
+  # choose icon
   local iconpath="$INSTALL_DIR/$ICON_NAME"
   if ! $SUDO_CMD test -f "$iconpath"; then iconpath="printer"; fi
 
-  # Exec uses pkexec to run the script as root and preserves X env
-  cat > /tmp/$DESKTOP_NAME.$$ <<EOF
+  # write tmp file as root then chown
+  tmpfile=$(mktemp "$TMP_PREFIX.desktop.XXXX")
+  cat > "$tmpfile" <<EOF
 [Desktop Entry]
 Name=Printer Tool
 Comment=IT Printer Management Tool
-Exec=pkexec env DISPLAY=\$DISPLAY XAUTHORITY=\$XAUTHORITY "$INSTALL_DIR/printers.sh"
+Exec=$exec_cmd
 Icon=$iconpath
 Terminal=false
 Type=Application
 Categories=Utility;
 EOF
 
-  # move into place, set ownership to user Desktop
-  $SUDO_CMD mv -f /tmp/$DESKTOP_NAME.$$ "$DESKTOP_DIR/$DESKTOP_NAME"
-  $SUDO_CMD chown "$REAL_USER:$REAL_USER" "$DESKTOP_DIR/$DESKTOP_NAME" 2>/dev/null || true
-  $SUDO_CMD chmod +x "$DESKTOP_DIR/$DESKTOP_NAME" 2>/dev/null || true
-  # mark trusted on GNOME
-  sudo -u "$REAL_USER" gio set "$DESKTOP_DIR/$DESKTOP_NAME" "metadata::trusted" true 2>/dev/null || true
+  $SUDO_CMD mv -f "$tmpfile" "$desktop_path"
+  $SUDO_CMD chown "$REAL_USER:$REAL_USER" "$desktop_path" 2>/dev/null || true
+  $SUDO_CMD chmod +x "$desktop_path" 2>/dev/null || true
+  # try mark trusted (GNOME)
+  sudo -u "$REAL_USER" gio set "$desktop_path" "metadata::trusted" true 2>/dev/null || true
 
-  _info "Ensured single desktop shortcut: $DESKTOP_DIR/$DESKTOP_NAME"
+  _info "Desktop shortcut ensured: $desktop_path"
 }
 
 # -----------------------
-# Update / self-update
+# Self update helpers
 # -----------------------
 get_remote_version(){
   if command -v curl >/dev/null 2>&1; then
@@ -168,7 +153,6 @@ get_remote_version(){
     echo ""
   fi
 }
-
 version_gt(){
   if command -v sort >/dev/null 2>&1; then
     maj=$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)
@@ -178,27 +162,8 @@ version_gt(){
   [ "$1" != "$2" ] && [ "$1" \> "$2" ]
   return
 }
-
-self_update_prompt(){
-  remote_v="$(get_remote_version)"
-  [ -z "$remote_v" ] && return 1
-  if version_gt "$remote_v" "$CURRENT_VERSION"; then
-    if command -v zenity >/dev/null 2>&1; then
-      if sudo -u "$REAL_USER" zenity --question --title "Update available" --text "New version $remote_v available. Update now?" 2>/dev/null; then
-        return 0
-      else
-        return 2
-      fi
-    else
-      read -p "New version $remote_v available. Update now? [y/N]: " ans
-      case "$ans" in [Yy]*) return 0 ;; *) return 2 ;; esac
-    fi
-  fi
-  return 1
-}
-
 perform_self_update(){
-  tmpf="$(mktemp)"
+  tmpf=$(mktemp "$TMP_PREFIX.update.XXXX")
   if curl -fsS --connect-timeout 10 "$REPO_RAW/printers.sh" -o "$tmpf"; then
     $SUDO_CMD cp -f "$INSTALL_DIR/printers.sh" "$INSTALL_DIR/printers.sh.bak" 2>/dev/null || true
     $SUDO_CMD mv -f "$tmpf" "$INSTALL_DIR/printers.sh"
@@ -211,38 +176,40 @@ perform_self_update(){
     return 1
   fi
 }
-
-# background check non-blocking
+# background check (non-blocking)
 background_update_check(){
   if command -v curl >/dev/null 2>&1 && ping -c1 -W2 8.8.8.8 &>/dev/null; then
-    ( sleep 2; if self_update_prompt; then perform_self_update "$@"; fi ) & disown
+    ( sleep 2
+      remote_v="$(get_remote_version)"
+      if [ -n "$remote_v" ] && version_gt "$remote_v" "$CURRENT_VERSION"; then
+        # ask user (zenity) or skip
+        if command -v zenity >/dev/null 2>&1; then
+          if sudo -u "$REAL_USER" zenity --question --title "Update available" --text "New version $remote_v. Update now?" 2>/dev/null; then
+            perform_self_update "$@"
+          fi
+        fi
+      fi
+    ) & disown
   fi
 }
 
 # -----------------------
-# DB fetch + merge logic
-# - Priority:
-#   1) fetch remote (but do not overwrite local)
-#   2) use local file next to installed script (/opt/.../printers.list)
-#   3) fallback sample
-# - Merging: remote entries appended if not present locally
+# DB fetch and merge
 # -----------------------
 fetch_and_merge_db(){
-  tmpremote="/tmp/${APP}_remote.$$"
+  tmpremote=$(mktemp "$TMP_PREFIX.remote.XXXX")
   rm -f "$tmpremote" 2>/dev/null || true
 
   if ping -c1 -W2 8.8.8.8 &>/dev/null && command -v curl >/dev/null 2>&1; then
     if curl -fsS --connect-timeout 5 "$REPO_RAW/$PRINTERS_LIST" -o "$tmpremote" 2>/dev/null; then
       if [ -s "$tmpremote" ]; then
         _info "Fetched remote printers.list"
-        # ensure installed copy exists
         if [ -f "$INSTALL_DIR/$PRINTERS_LIST" ]; then
-          # merge remote into installed file (avoid duplicates)
-          $SUDO_CMD bash -c "awk 'NF{print \$0}' '$tmpremote' | while IFS= read -r line; do if ! grep -Fxq \"\$line\" '$INSTALL_DIR/$PRINTERS_LIST'; then echo \"\$line\" >> '$INSTALL_DIR/$PRINTERS_LIST'; fi; done"
+          # merge remote into installed file
+          $SUDO_CMD bash -c "awk 'NF && \$0 !~ /^#/ {print \$0}' '$tmpremote' | while IFS= read -r line; do if ! grep -Fxq \"\$line\" '$INSTALL_DIR/$PRINTERS_LIST'; then echo \"\$line\" >> '$INSTALL_DIR/$PRINTERS_LIST'; fi; done"
           DB_FILE="$INSTALL_DIR/$PRINTERS_LIST"
           _info "Merged remote into $INSTALL_DIR/$PRINTERS_LIST"
         else
-          # copy remote as installed file
           $SUDO_CMD cp -f "$tmpremote" "$INSTALL_DIR/$PRINTERS_LIST"
           DB_FILE="$INSTALL_DIR/$PRINTERS_LIST"
           _info "Copied remote printers.list to $INSTALL_DIR"
@@ -253,7 +220,7 @@ fetch_and_merge_db(){
     fi
   fi
 
-  # if we reach here, remote not used; prefer local next to script then installed
+  # fallback options
   if [ -f "$SCRIPT_DIR/$PRINTERS_LIST" ] && [ -s "$SCRIPT_DIR/$PRINTERS_LIST" ]; then
     DB_FILE="$SCRIPT_DIR/$PRINTERS_LIST"
     _info "Using local printers.list next to script"
@@ -265,8 +232,8 @@ fetch_and_merge_db(){
     return 0
   fi
 
-  # fallback sample DB
-  tmpdb="/tmp/${APP}_sample.$$"
+  # fallback sample
+  tmpdb=$(mktemp "$TMP_PREFIX.sample.XXXX")
   cat > "$tmpdb" <<'EOF'
 # Sample printers.list
 # Format: Branch|Label|Address|Type|Driver(optional)
@@ -279,13 +246,16 @@ EOF
   return 0
 }
 
+# -----------------------
+# Normalize DB formats
+# -----------------------
 normalize_db(){
   awk -F'|' '{
     if ($0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) next;
     for(i=1;i<=NF;i++){ gsub(/^[[:space:]]+|[[:space:]]+$/,"",$i) }
     print $0
-  }' "$DB_FILE" > "/tmp/${APP}_db_clean.$$" 2>/dev/null || cp -f "$DB_FILE" "/tmp/${APP}_db_clean.$$" 2>/dev/null || true
-  DB_FILE="/tmp/${APP}_db_clean.$$"
+  }' "$DB_FILE" > "${TMP_PREFIX}.db_clean" 2>/dev/null || cp -f "$DB_FILE" "${TMP_PREFIX}.db_clean" 2>/dev/null || true
+  DB_FILE="${TMP_PREFIX}.db_clean"
 }
 
 normalize_legacy(){
@@ -296,12 +266,12 @@ normalize_legacy(){
       gsub(/^[ \t]+|[ \t]+$/,"",b); gsub(/^[ \t]+|[ \t]+$/,"",a); gsub(/^[ \t]+|[ \t]+$/,"",m);
       print b "|" m "|" a "|network"
     } else print $0
-  }' "$DB_FILE" > "/tmp/${APP}_db_norm.$$" 2>/dev/null || cp -f "$DB_FILE" "/tmp/${APP}_db_norm.$$" 2>/dev/null || true
-  DB_FILE="/tmp/${APP}_db_norm.$$"
+  }' "$DB_FILE" > "${TMP_PREFIX}.db_norm" 2>/dev/null || cp -f "$DB_FILE" "${TMP_PREFIX}.db_norm" 2>/dev/null || true
+  DB_FILE="${TMP_PREFIX}.db_norm"
 }
 
 # -----------------------
-# Network validation
+# Validate network (ping + port)
 # -----------------------
 validate_network(){
   local target="$1"
@@ -320,12 +290,10 @@ validate_network(){
 
 # -----------------------
 # Driver lookup
-# - search DRIVER_DIRS and also $INSTALL_DIR/drivers if present
 # -----------------------
 find_driver(){
   local hint="$1"
   local found=""
-  # check install drivers dir first
   for d in "$INSTALL_DIR/drivers" "${DRIVER_DIRS[@]}"; do
     [ -d "$d" ] || continue
     if [ -n "$hint" ]; then
@@ -335,7 +303,7 @@ find_driver(){
     f=$(ls "$d"/*.ppd 2>/dev/null | head -n1 || true)
     [ -n "$f" ] && { echo "$f"; return 0; }
   done
-  # if none found, show zenity file picker to admin (if available)
+  # zenity picker fallback
   if command -v zenity >/dev/null 2>&1; then
     driver_file=$(sudo -u "$REAL_USER" zenity --file-selection --title "Select driver PPD (اختيار ملف درايفر)" 2>/dev/null || true)
     [ -n "$driver_file" ] && { echo "$driver_file"; return 0; }
@@ -371,11 +339,27 @@ deploy_network_printer(){
     _warn "port 9100 closed on $addr"
   fi
 
-  local uri="socket://${addr}:9100"
+  # Choose best URI automatically
+  local uri
+  if command -v nc >/dev/null 2>&1; then
+    if nc -z -w2 "$addr" 9100 &>/dev/null; then
+      uri="socket://${addr}:9100"
+    elif nc -z -w2 "$addr" 631 &>/dev/null; then
+      uri="ipp://${addr}/ipp/print"
+    elif nc -z -w2 "$addr" 515 &>/dev/null; then
+      uri="lpd://${addr}/"
+    else
+      uri="socket://${addr}:9100"
+    fi
+  else
+    uri="socket://${addr}:9100"
+  fi
+  _info "Using URI: $uri"
+
   local driver_file
   driver_file="$(find_driver "$driver_hint" 2>/dev/null || echo "")"
 
-  local tmp_err="/tmp/${APP}_lpadmin_err.$$"
+  local tmp_err="$(mktemp "$TMP_PREFIX.err.XXXX")"
   rm -f "$tmp_err" 2>/dev/null || true
 
   if [ -n "$driver_file" ]; then
@@ -389,8 +373,11 @@ deploy_network_printer(){
     fi
   else
     _info "No driver found; trying -m everywhere then raw"
-    $SUDO_CMD lpadmin -p "$cups_name" -E -v "$uri" -m everywhere 2>"$tmp_err" || $SUDO_CMD lpadmin -p "$cups_name" -E -v "$uri" -m raw 2>"$tmp_err" || true
-    if ! $SUDO_CMD lpstat -p "$cups_name" >/dev/null 2>&1; then
+    if $SUDO_CMD lpadmin -p "$cups_name" -E -v "$uri" -m everywhere 2>"$tmp_err"; then
+      _info "Added with everywhere"
+    elif $SUDO_CMD lpadmin -p "$cups_name" -E -v "$uri" -m raw 2>"$tmp_err"; then
+      _info "Added with raw"
+    else
       errtxt=$(cat "$tmp_err" 2>/dev/null || true)
       _err "lpadmin fallback failed: $errtxt"
       sudo -u "$REAL_USER" zenity --error --title "Add failed" --text "Failed to add printer:\n$errtxt" 2>/dev/null || true
@@ -418,12 +405,12 @@ deploy_network_printer(){
 run_test_and_open_cups(){
   local cups_name="$1" addr="$2"
   if command -v lp >/dev/null 2>&1; then
-    tmpf="/tmp/${APP}_test.$$"
+    local tmpf="$(mktemp "$TMP_PREFIX.test.XXXX")"
     echo -e "IT Aman Test Page\nPrinter: $cups_name\nDate: $(date)" > "$tmpf" || true
     $SUDO_CMD lp -d "$cups_name" "$tmpf" 2>/dev/null || true
     rm -f "$tmpf" 2>/dev/null || true
   fi
-  # open printer page for user (non-blocking)
+  # open printer page for user
   PR_NAME_URL="$(python3 - <<PY 2>/dev/null
 import sys,urllib.parse
 print(urllib.parse.quote(sys.argv[1]))
@@ -436,12 +423,12 @@ PY
 }
 
 # -----------------------
-# UI: Branch-first + search filter (zenity preferred)
+# Branch-first UI / search-filter
 # -----------------------
 branch_list_ui(){
   branches=$(awk -F'|' '{print $1}' "$DB_FILE" | sort -u 2>/dev/null || true)
   if command -v zenity >/dev/null 2>&1; then
-    tmp=$(mktemp)
+    tmp=$(mktemp "$TMP_PREFIX.branches.XXXX")
     echo "Search / فلترة الفروع" > "$tmp"
     echo "$branches" >> "$tmp"
     SELECTED=$(cat "$tmp" | sudo -u "$REAL_USER" zenity --list --title "Branches - اختر فرع" --column "Branch or Search" --height=420 --width=420 2>/dev/null || true)
@@ -464,7 +451,6 @@ branch_list_ui(){
       return
     fi
   else
-    # CLI fallback
     echo "Branches:"
     printf '%s\n' "$branches"
     read -p "Type branch name (or Enter to cancel): " br
@@ -496,7 +482,6 @@ search_branch_and_deploy(){
     addr=$(echo "$record" | awk -F'|' '{print $3}' | xargs)
     typ=$(echo "$record" | awk -F'|' '{print $4}' | xargs)
     driver_hint=$(echo "$record" | awk -F'|' '{print $5}' | xargs)
-    # only network allowed: if not network, confirm treat as network (if address valid)
     if [ "$typ" != "network" ]; then
       if echo "$addr" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$|[A-Za-z0-9.-]+$'; then
         if ! sudo -u "$REAL_USER" zenity --question --text "This printer is marked as '$typ'. Treat as network printer using address: $addr ?\nسيتم التعامل كطابعة شبكة." --ok-label "Yes/نعم" --cancel-label "No/لا" 2>/dev/null; then
@@ -521,7 +506,7 @@ search_branch_and_deploy(){
 # Smart fix / Clean / Status
 # -----------------------
 smart_fix(){
-  DIAG=$(mktemp) || DIAG="/tmp/${APP}_diag.$$"
+  DIAG=$(mktemp "$TMP_PREFIX.diag.XXXX") || DIAG="/tmp/${APP}_diag.$$"
   (
     echo "10"
     if ! systemctl is-active --quiet cups; then systemctl restart cups; echo "- restarted CUPS" >> "$DIAG"; fi
@@ -551,7 +536,7 @@ view_status(){
 }
 
 # -----------------------
-# CLI args
+# CLI args handling
 # -----------------------
 if [ "${1:-}" = "--update" ]; then
   _info "Manual update requested..."
@@ -570,7 +555,7 @@ normalize_db
 normalize_legacy
 
 # -----------------------
-# Main UI loop (zenity preferred)
+# Main UI loop
 # -----------------------
 while true; do
   if command -v zenity >/dev/null 2>&1; then

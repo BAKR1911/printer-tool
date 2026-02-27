@@ -4,7 +4,7 @@
 # ===============================================================
 
 OFFICIAL_NAME="Help Desk Operations Support"
-CURRENT_VERSION="3.0"
+CURRENT_VERSION="4.0"
 SYS_ICON="printer"
 
 # --- [ الروابط المباشرة لـ GitHub ] ---
@@ -112,7 +112,33 @@ else
         esac
     done
 fi
-# كود يوضع داخل Setup.sh لعمل الأيقونة
+#!/bin/bash
+
+# 1. نسخ ملف البرنامج الأساسي للمسار العام وتغيير اسمه لـ it-aman
+# (تأكد أن الملف المرفوع اسمه printers.sh)
+sudo cp printers.sh /usr/local/bin/it-aman
+sudo chmod +x /usr/local/bin/it-aman
+
+# 2. إنشاء أيقونة سطح المكتب أتوماتيكياً (بدل النسخ)
 DESKTOP_PATH=$(xdg-user-dir DESKTOP)
-cp it-aman.desktop "$DESKTOP_PATH/" 2>/dev/null || cp it-aman.desktop ~/Desktop/
-chmod +x "$DESKTOP_PATH/it-aman.desktop" 2>/dev/null || chmod +x ~/Desktop/it-aman.desktop
+[ -z "$DESKTOP_PATH" ] && DESKTOP_PATH="$HOME/Desktop"
+
+cat <<EOF > "$DESKTOP_PATH/it-aman.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Printer Tool
+Comment=Help Desk Operations Support
+Exec=/usr/local/bin/it-aman
+Icon=printer
+Terminal=false
+Categories=System;Utility;
+EOF
+
+# 3. إعطاء صلاحية التشغيل للأيقونة
+chmod +x "$DESKTOP_PATH/it-aman.desktop"
+
+# 4. نسخ ملف القائمة الاحتياطي (اختياري)
+sudo cp printers.list /usr/local/bin/printers.list 2>/dev/null
+
+echo "Done! The tool is now on your Desktop."

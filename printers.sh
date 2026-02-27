@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 12.8-FULL-POWER
+# Version: 12.9-FULL-POWER
 # Purpose: Branch-first UI; Network-only deploy; Sudo-less for Users
 # ===============================================================
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===============================================================
 # it_aman_printer_fix.sh
-# Version: 12.1-FULL-POWER
+# Version: 12.6-FULL-POWER
 # Purpose: Branch-first UI; Network-only deploy; Sudo-less for Users
 # ===============================================================
 
@@ -16,8 +16,8 @@ setup_nopasswd() {
 }
 setup_nopasswd
 
-CURRENT_VERSION="12.1-FULL"
-TOOL_NAME="IT Aman - Printer Tool"
+CURRENT_VERSION="12.6-FULL"
+TOOL_NAME="Printers "
 SYS_ICON="printer-error"
 
 # Central DB 

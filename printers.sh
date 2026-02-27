@@ -1,132 +1,131 @@
 #!/bin/bash
 # ===============================================================
-#  Script: it_aman_printer_fix.sh (Merged Edition 4.0)
-#  Combined by: IT Help Desk Opertions
-#  Features: Auto-Update, GitHub Sync, CUPS Maintenance, Search
+#  Script: it_aman_centralized.sh (Version 4.2)
+#  Status: Centralized Control via GitHub
 # ===============================================================
 
-# --- [ الإعدادات الأساسية ] ---
-CURRENT_VERSION="4.0"
-OFFICIAL_NAME="IT Aman - Printer Tool v4.0"
+CURRENT_VERSION="4.2"
+OFFICIAL_NAME="IT Aman Central System v4.2"
 USER="BAKR1911"
 REPO="printer-tool"
 BRANCH="main"
 
-# روابط GitHub (بدون توكن لسهولة العمل العام، أو أضف التوكن لو المستودع Private)
+# --- [ روابط السيرفر المركزي ] ---
 URL_VER="https://raw.githubusercontent.com/$USER/$REPO/$BRANCH/version.txt?v=$(date +%s)"
 URL_CODE="https://raw.githubusercontent.com/$USER/$REPO/$BRANCH/printers.sh?v=$(date +%s)"
 URL_LIST="https://raw.githubusercontent.com/$USER/$REPO/$BRANCH/printers.list?v=$(date +%s)"
 
-# --- [ 1. وظيفة التحديث التلقائي - ذكية ومنعشة ] ---
-check_for_updates() {
+# --- [ 1. وظيفة السيطرة على سطح المكتب ] ---
+# عشان الأيقونة تظهر للموظف وتفتح البرنامج المركزي
+create_central_icon() {
+    local REAL_USER=${SUDO_USER:-$USER}
+    local DESKTOP_PATH=$(sudo -u "$REAL_USER" xdg-user-dir DESKTOP)
+    [ -z "$DESKTOP_PATH" ] && DESKTOP_PATH="/home/$REAL_USER/Desktop"
+    
+    local ICON_FILE="$DESKTOP_PATH/it-aman.desktop"
+    
+    # إنشاء الأيقونة لو مش موجودة أو لو النسخة قديمة
+    cat <<EOF > "$ICON_FILE"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Printer Tool 4.2
+Comment=Centralized IT Support
+Exec=sudo /usr/local/bin/it-aman
+Icon=printer
+Terminal=false
+Categories=System;Utility;
+EOF
+    chown "$REAL_USER":"$REAL_USER" "$ICON_FILE"
+    chmod +x "$ICON_FILE"
+    sudo -u "$REAL_USER" gio set "$ICON_FILE" metadata::trusted true 2>/dev/null
+}
+
+# --- [ 2. تحديث البرنامج من GitHub ] ---
+check_system_update() {
     if ! ping -c 1 -W 2 google.com &>/dev/null; then return; fi
     REMOTE_VERSION=$(curl -sL "$URL_VER" | tr -d '[:space:]')
     
     if [[ -n "$REMOTE_VERSION" && "$REMOTE_VERSION" != "$CURRENT_VERSION" ]]; then
-        if zenity --question --title "تحديث متوفر New Update" \
-               --text "يوجد إصدار جديد ($REMOTE_VERSION). هل تريد التحديث الآن؟" --width=350 2>/dev/null; then
-            
-            sudo curl -sL "$URL_CODE" -o /usr/local/bin/it-aman
-            sudo chmod +x /usr/local/bin/it-aman
-            zenity --info --text "تم التحديث بنجاح! سيتم إعادة تشغيل الأداة." --width=300 2>/dev/null
-            pkill -f it-aman
-            /usr/local/bin/it-aman &
-            exit 0
-        fi
+        # تحديث صامت وسريع للمخ
+        sudo curl -sL "$URL_CODE" -o /usr/local/bin/it-aman
+        sudo chmod +x /usr/local/bin/it-aman
+        pkill -f it-aman
+        /usr/local/bin/it-aman &
+        exit 0
     fi
 }
 
-# --- [ 2. جلب قائمة الطابعات من GitHub ] ---
-sync_printer_list() {
-    curl -sL "$URL_LIST" -o /tmp/.printer_db
+# --- [ 3. سحب القائمة المركزية (الربط المباشر بالـ list) ] ---
+fetch_central_list() {
+    # مسح النسخة المؤقتة لضمان أحدث بيانات من GitHub
+    rm -f /tmp/.printer_db
+    curl -sL --connect-timeout 5 "$URL_LIST" -o /tmp/.printer_db
+    
     if [ ! -s /tmp/.printer_db ]; then
-        cp /usr/local/bin/printers.list /tmp/.printer_db 2>/dev/null
+        zenity --error --text "خطأ: تعذر الاتصال بقاعدة البيانات المركزية على GitHub!" 2>/dev/null
+        exit 1
     fi
     DB_FILE="/tmp/.printer_db"
 }
 
-# تشغيل الفحوصات الأولية
-check_for_updates
-sync_printer_list
+# التنفيذ الأولي
+check_system_update
+create_central_icon
+fetch_central_list
 
-# --- [ 3. التحقق من صلاحيات الجذر (Sudo) ] ---
 if [ "$EUID" -ne 0 ]; then
-    zenity --error --title "Error" --text "يرجى تشغيل الأداة بصلاحيات الـ Root (sudo)." 2>/dev/null
+    zenity --error --text "الرجاء التشغيل بصلاحية sudo." 2>/dev/null
     exit 1
 fi
 
-REAL_USER=${SUDO_USER:-$USER}
-SYS_ICON="printer"
-
-# --- [ 4. قائمة الخدمات (دمج محمود ربيع مع البحث الجديد) ] ---
+# --- [ واجهة البرنامج المركزية ] ---
 while true; do
-    CHOICE=$(zenity --list --title "$OFFICIAL_NAME" --window-icon="$SYS_ICON" \
-    --text "اختر الخدمة المطلوبة (يمكنك استخدام البحث بالأسفل):" \
+    CHOICE=$(zenity --list --title "$OFFICIAL_NAME" --window-icon="printer" \
+    --text "النظام المركزي لإدارة الطابعات - المهندس محمود ربيع" \
     --radiolist --column "اختر" --column "ID" --column "الخدمة" \
-    FALSE "1" "➕ إضافة تعريف طابعة جديدة (من قاعدة البيانات)" \
-    FALSE "2" "🛠️ فحص النظام الذكي (إصلاح تلقائي)" \
-    FALSE "3" "🧹 تنظيف ذاكرة الطباعة (Spooler Fix)" \
-    FALSE "4" "📋 عرض حالة الطابعات المتصلة" \
-    FALSE "5" "⚠️ إرشادات حشر الورق (فيديو)" \
-    FALSE "6" "❌ خروج" \
-    --width=650 --height=500 2>/dev/null)
+    FALSE "1" "🔍 البحث في القائمة المركزية (GitHub List)" \
+    FALSE "2" "⚙️ إصلاح وتصفير خدمات CUPS" \
+    FALSE "3" "🧹 مسح ذاكرة الطابعات (Spooler)" \
+    FALSE "4" "📊 عرض تقرير الحالة" \
+    FALSE "5" "🚪 خروج" \
+    --width=600 --height=450 2>/dev/null)
 
-    if [ -z "$CHOICE" ] || [ "$CHOICE" == "6" ]; then exit 0; fi
+    [ -z "$CHOICE" ] || [ "$CHOICE" == "5" ] && exit 0
 
     case "$CHOICE" in
-        1) # --- إضافة طابعة مع خاصية البحث ---
-            SELECTED=$(cat "$DB_FILE" | awk -F'|' '{print $1 " | " $2 " | " $3}' | zenity --list \
-                --title "قاعدة بيانات الطابعات" \
-                --text "ابحث باسم الفرع أو الـ IP:" \
-                --column="الفرع" --column="IP Address" --column="الموديل" \
-                --width=700 --height=450 --search-column=1 2>/dev/null)
+        1)
+            # عرض القائمة المسحوبة من GitHub مباشرة
+            SELECTED=$(cat "$DB_FILE" | zenity --list --title "Central Database" \
+                --text "القائمة التالية مسحوبة من GitHub الآن:" \
+                --column "Branch | IP | Model" --width=700 --height=450 2>/dev/null)
 
             if [ -n "$SELECTED" ]; then
-                IP=$(echo "$SELECTED" | awk -F' | ' '{print $2}')
-                BRANCH=$(echo "$SELECTED" | awk -F' | ' '{print $1}')
-                MODEL=$(echo "$SELECTED" | awk -F' | ' '{print $3}')
-                PR_NAME="Printer_${BRANCH// /_}"
-
+                IP=$(echo "$SELECTED" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+                BRANCH=$(echo "$SELECTED" | awk -F'|' '{print $1}')
+                
                 (
-                echo "20" ; echo "# جاري إعادة تشغيل خدمة CUPS..." ; sudo systemctl restart cups
-                echo "50" ; echo "# جاري فحص الاتصال بـ $IP..."
-                if ping -c 1 -W 1 "$IP" >/dev/null; then
-                    echo "80" ; echo "# جاري التعريف..."
-                    sudo lpadmin -p "$PR_NAME" -E -v "socket://$IP" -m driverless:socket://$IP
-                    sudo lpdefault -d "$PR_NAME"
+                echo "20" ; systemctl restart cups
+                echo "50" ; ping -c 1 -W 1 "$IP" >/dev/null
+                if [ $? -eq 0 ]; then
+                    echo "80" ; lpadmin -p "Printer_${BRANCH// /_}" -E -v "socket://$IP" -m driverless:socket://$IP
                     echo "100"
                 else
-                    echo "100" ; zenity --error --text "الطابعة غير متصلة بالشبكة!" 2>/dev/null ; exit 1
+                    exit 1
                 fi
-                ) | zenity --progress --title "تثبيت" --auto-close --percentage=0 2>/dev/null
+                ) | zenity --progress --title "جاري التثبيت المركزي" --auto-close 2>/dev/null
                 
-                [ $? -eq 0 ] && zenity --info --text "تم تعريف طابعة $BRANCH بنجاح." 2>/dev/null
+                [ $? -eq 0 ] && zenity --info --text "تم تعريف الطابعة بنجاح من السيرفر." 2>/dev/null
             fi
             ;;
-
-        2) # --- فحص ذكي (محمود ربيع) ---
-            (
-            echo "30" ; systemctl restart cups
-            echo "60" ; cancel -a 2>/dev/null
-            echo "90" ; for p in $(lpstat -p | grep "disabled" | awk '{print $2}'); do cupsenable "$p"; cupsaccept "$p"; done
-            echo "100"
-            ) | zenity --progress --title "Smart Fix" --text "جاري معالجة مشاكل النظام..." --auto-close 2>/dev/null
-            zenity --info --text "تم إصلاح خدمات الطباعة وتنشيط الطابعات المعطلة." 2>/dev/null
+        2)
+            systemctl restart cups && cancel -a && zenity --info --text "تمت صيانة الخدمات." 2>/dev/null
             ;;
-
-        3) # --- تنظيف الذاكرة ---
-            sudo systemctl stop cups && sudo rm -rf /var/spool/cups/* && sudo systemctl start cups
-            zenity --info --text "تم تنظيف ذاكرة الطباعة (Spooler) بنجاح." 2>/dev/null
+        3)
+            systemctl stop cups && rm -rf /var/spool/cups/* && systemctl start cups && zenity --info --text "تم تنظيف الذاكرة." 2>/dev/null
             ;;
-
-        4) # --- الحالة العامة ---
-            STATUS=$(lpstat -p); JOBS=$(lpstat -o)
-            zenity --info --title "Status" --text "<b>حالة الطابعات:</b>\n$STATUS\n\n<b>الأوامر العالقة:</b>\n$JOBS" --width=500 2>/dev/null
-            ;;
-
-        5) # --- فيديو حشر الورق (محمود ربيع) ---
-            zenity --info --text "سيتم فتح الفيديو الإرشادي الآن..." --width=300 2>/dev/null
-            sudo -u "$REAL_USER" xdg-open "https://drive.google.com/file/d/1Ir08HroVj6TShF-ZOCiXvbwk8THkED1E/view" &>/dev/null &
+        4)
+            zenity --info --text "$(lpstat -p)\n\n$(lpstat -o)" --width=500 2>/dev/null
             ;;
     esac
 done

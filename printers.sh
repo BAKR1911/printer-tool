@@ -27,7 +27,7 @@ create_central_icon() {
     # إنشاء الأيقونة لو مش موجودة أو لو النسخة قديمة
     cat <<EOF > "$ICON_FILE"
 [Desktop Entry]
-Version=1.0
+Version=4.2
 Type=Application
 Name=Printer Tool 4.2
 Comment=Centralized IT Support

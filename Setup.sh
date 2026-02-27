@@ -77,9 +77,9 @@ chmod 0440 /etc/sudoers.d/it-aman-tool
 # [5] إنشاء الأيقونة الاحترافية (بدون تيرمنال)
 cat <<EOF > "$DESKTOP_PATH/IT-Aman.desktop"
 [Desktop Entry]
-Version=1.0
+Version=12.6
 Type=Application
-Name=IT Aman Tool
+Name=Printers
 Comment=Printer Repair Tool
 Exec=sudo /usr/local/bin/it-aman
 Icon=printer

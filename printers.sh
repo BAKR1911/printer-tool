@@ -3,7 +3,7 @@
 # it_aman_printer_fix.sh (v12.8 - THE ORIGINAL FULL CODE)
 # ===============================================================
 
-CURRENT_VERSION="12.8-FULL"
+CURRENT_VERSION="13.3-FULL"
 TOOL_NAME="IT Aman - Printer Tool"
 SYS_ICON="printer-error"
 

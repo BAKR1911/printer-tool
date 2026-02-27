@@ -13,7 +13,7 @@ IFS=$'\n\t'
 # -----------------------
 # Config
 # -----------------------
-CURRENT_VERSION="11.5"
+CURRENT_VERSION="11.6"
 REPO_RAW="https://raw.githubusercontent.com/BAKR1911/printer-tool/main"
 APP="printer-tool"
 INSTALL_DIR="/opt/$APP"

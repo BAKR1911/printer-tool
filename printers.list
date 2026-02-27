@@ -1,3 +1,5 @@
-Aswan|192.168.10.20|HP M404
-Qena|192.168.20.15|Epson LQ350
-Luxor|192.168.30.25|HP 2035
+Aswan|Front Office HP M404|192.168.10.20|network|hp-ppd
+Aswan|Manager HP M404|192.168.10.21|network|hp-ppd
+Aswan|POS Thermal 1|/dev/ttyUSB0|serial|tm-raw
+Aswan|POS Thermal 2|USB_POS_01|usb|tm-raw
+Qena|Back Office Epson LQ|192.168.20.15|network|epson-lq
